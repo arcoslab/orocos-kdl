@@ -1,0 +1,581 @@
+diff --git a/orocos_kdl/debian/control b/orocos_kdl/debian/control
+index 1efce80..ead2541 100644
+--- a/orocos_kdl/debian/control
++++ b/orocos_kdl/debian/control
+@@ -25,15 +25,3 @@ Description: Kinematics and Dynamics Library runtime
+  representations for kinematic structures and their inverse and forward
+  kinematic solvers.
+ 
+-Package: python-orocos-kdl
+-Section: libs
+-Architecture: any
+-Depends: ${python:Depends}, python, liborocos-kdl
+-XS-Python-Version: current
+-XB-Python-Version:${python:Versions}
+-Description: Kinematics and Dynamics Library python binding
+- Orocos project to supply RealTime usable kinematics and dynamics code,
+- it contains code for rigid body kinematics calculations and
+- representations for kinematic structures and their inverse and forward
+- kinematic solvers.
+-
+diff --git a/orocos_kdl/debian/python-orocos-kdl.install b/orocos_kdl/debian/python-orocos-kdl.install
+deleted file mode 100644
+index 0241272..0000000
+--- a/orocos_kdl/debian/python-orocos-kdl.install
++++ /dev/null
+@@ -1 +0,0 @@
+-usr/lib/python/site-packages/PyKDL.so
+diff --git a/orocos_kdl/src/chain.cpp b/orocos_kdl/src/chain.cpp
+index e7e7ff7..3d07c6b 100644
+--- a/orocos_kdl/src/chain.cpp
++++ b/orocos_kdl/src/chain.cpp
+@@ -20,6 +20,7 @@
+ // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+ 
+ #include "chain.hpp"
++#include <iostream>
+ 
+ namespace KDL {
+     using namespace std;
+@@ -27,40 +28,91 @@ namespace KDL {
+     Chain::Chain():
+         segments(0),
+         nrOfJoints(0),
+-        nrOfSegments(0)
++	nrOfIndJoints(0),
++        nrOfSegments(0),
++	cm(),
++	nrOfUnlockedJoints(0),
++	locked_joints(0)
+     {
+     }
+ 
+     Chain::Chain(const Chain& in):nrOfJoints(0),
+-                                  nrOfSegments(0)
++                                  nrOfSegments(0),nrOfUnlockedJoints(0),
++				  nrOfIndJoints(0),segments(0),cm(),
++				  locked_joints(0)
+     {
++      //std::cout<<"copying chain constructor"<<std::endl;
+         for(unsigned int i=0;i<in.getNrOfSegments();i++)
+             this->addSegment(in.getSegment(i));
++	this->setCoupling(in.getLockedJoints(),in.cm);
+     }
+ 
+     Chain& Chain::operator=(const Chain& arg)
+     {
++      //std::cout<<"copying operator chain"<<std::endl;
+         nrOfJoints=0;
+         nrOfSegments=0;
+         segments.resize(0);
++	nrOfIndJoints=0;
++	nrOfUnlockedJoints=0;
++	locked_joints.resize(0);
+         for(unsigned int i=0;i<arg.nrOfSegments;i++)
+             addSegment(arg.getSegment(i));
++	this->setCoupling(arg.getLockedJoints(),arg.cm);
+         return *this;
+ 
+     }
+ 
+     void Chain::addSegment(const Segment& segment)
+     {
++      //std::cout<<"add Segment"<<std::endl;
+         segments.push_back(segment);
+         nrOfSegments++;
+         if(segment.getJoint().getType()!=Joint::None)
++	{
++	  //std::cout<<"joint"<<std::endl;
+             nrOfJoints++;
++	    locked_joints.push_back(false);
++	    nrOfUnlockedJoints++;
++	    cm.setIdentity(nrOfUnlockedJoints,nrOfUnlockedJoints);
++	    //std::cout<<"test"<<nrOfUnlockedJoints<<std::endl;
++	    nrOfIndJoints=nrOfUnlockedJoints;
++	    //std::cout<<cm<<std::endl;
++	}
++
+     }
+ 
+     void Chain::addChain(const Chain& chain)
+     {
+         for(unsigned int i=0;i<chain.getNrOfSegments();i++)
++	{
+             this->addSegment(chain.getSegment(i));
++	    locked_joints.back()=chain.getLockedJoints()[i];
++	}
++    }
++
++    int Chain::setCoupling(const std::vector<bool> locked_joints,const Eigen::MatrixXd& cm)
++    {
++        if(locked_joints.size()!=locked_joints.size())
++            return -1;
++	int nrOfUnlockedJoints_(0);
++	//std::cout<<"Locked Joints"<<std::endl;
++        for(unsigned int i=0;i<locked_joints.size();i++){
++            if(!locked_joints[i])
++                nrOfUnlockedJoints_++;
++	    //std::cout<<locked_joints[i]<<" ";
++        }
++	//std::cout<<"nrOfunlockedjoints "<<nrOfUnlockedJoints_<<std::endl;
++	//std::cout<<"cmrows "<<cm.rows()<<std::endl;
++
++        if(cm.rows()!=nrOfUnlockedJoints_)
++	  return -1;
++        this->locked_joints=locked_joints;
++        nrOfUnlockedJoints=nrOfUnlockedJoints_;
++	this->cm=cm;
++	//std::cout<<this->cm<<std::endl;
++	nrOfIndJoints=cm.cols();
++	return(0);
+     }
+ 
+     const Segment& Chain::getSegment(unsigned int nr)const
+@@ -68,6 +120,12 @@ namespace KDL {
+         return segments[nr];
+     }
+ 
++    std::vector<bool> Chain::getLockedJoints() const
++    {
++      return(locked_joints);
++    }
++
++
+     Chain::~Chain()
+     {
+     }
+diff --git a/orocos_kdl/src/chain.hpp b/orocos_kdl/src/chain.hpp
+index 5dcb862..426c232 100644
+--- a/orocos_kdl/src/chain.hpp
++++ b/orocos_kdl/src/chain.hpp
+@@ -24,6 +24,7 @@
+ 
+ #include "segment.hpp"
+ #include <string>
++#include <Eigen/Core>
+ 
+ namespace KDL {
+     /**
+@@ -35,9 +36,14 @@ namespace KDL {
+     class Chain {
+     private:
+         int nrOfJoints;
++        int nrOfIndJoints;
+         int nrOfSegments;
++        int nrOfUnlockedJoints;
++        std::vector<bool> locked_joints;
+     public:
+         std::vector<Segment> segments;
++        Eigen::MatrixXd cm;
++        
+         /**
+          * The constructor of a chain, a new chain is always empty.
+          *
+@@ -61,6 +67,16 @@ namespace KDL {
+         void addChain(const Chain& chain);
+ 
+         /**
++	 * Sets the joints that are locked and the coupling matrix.
++	 * locked_joints is an std vector of bools that indicates which joints
++	 * are locked (true), and which ones are not locked (false).
++	 * cm matrix helps define a kinematic structure with coupled joints
++	 * @param cm The coupling matrix
++	 */
++
++        int setCoupling(const std::vector<bool> locked_joints,const Eigen::MatrixXd& cm);
++
++        /**
+          * Request the total number of joints in the chain.\n
+          * <strong> Important:</strong> It is not the
+          * same as the total number of segments since a segment does not
+@@ -69,6 +85,14 @@ namespace KDL {
+          * @return total nr of joints
+          */
+         unsigned int getNrOfJoints()const {return nrOfJoints;};
++      
++        /**
++	 * Request the total number of independent joints in the chain.
++	 * It's the Coupling matrix rank.
++	 * @return total nr of independ joints
++	 */
++        unsigned int getNrOfIndJoints()const {return nrOfIndJoints;};
++
+         /**
+          * Request the total number of segments in the chain.
+          * @return total number of segments
+@@ -85,6 +109,11 @@ namespace KDL {
+          */
+         const Segment& getSegment(unsigned int nr)const;
+ 
++        std::vector<bool> getLockedJoints() const;
++
++        unsigned int getNrOfUnlockedJoints()const {return nrOfUnlockedJoints;};
++
++
+         virtual ~Chain();
+     };
+ 
+diff --git a/orocos_kdl/src/chainiksolvervel_wdls.cpp b/orocos_kdl/src/chainiksolvervel_wdls.cpp
+index 841318e..4bd50b8 100644
+--- a/orocos_kdl/src/chainiksolvervel_wdls.cpp
++++ b/orocos_kdl/src/chainiksolvervel_wdls.cpp
+@@ -28,20 +28,21 @@ namespace KDL
+     ChainIkSolverVel_wdls::ChainIkSolverVel_wdls(const Chain& _chain,double _eps,int _maxiter):
+         chain(_chain),
+         jnt2jac(chain),
+-        jac(chain.getNrOfJoints()),
+-        U(MatrixXd::Zero(6,chain.getNrOfJoints())),
+-        S(VectorXd::Zero(chain.getNrOfJoints())),
+-        V(MatrixXd::Zero(chain.getNrOfJoints(),chain.getNrOfJoints())),
++        jac(chain.getNrOfIndJoints()),
++        U(MatrixXd::Zero(6,chain.getNrOfIndJoints())),
++        S(VectorXd::Zero(chain.getNrOfIndJoints())),
++        V(MatrixXd::Zero(chain.getNrOfIndJoints(),chain.getNrOfIndJoints())),
+         eps(_eps),
+         maxiter(_maxiter),
+-        tmp(VectorXd::Zero(chain.getNrOfJoints())),
+-        tmp_jac(MatrixXd::Zero(6,chain.getNrOfJoints())),
+-        tmp_jac_weight1(MatrixXd::Zero(6,chain.getNrOfJoints())),
+-        tmp_jac_weight2(MatrixXd::Zero(6,chain.getNrOfJoints())),
++        tmp(VectorXd::Zero(chain.getNrOfIndJoints())),
++        tmp_jac(MatrixXd::Zero(6,chain.getNrOfUnlockedJoints())),
++        tmp_jac_coupling(MatrixXd::Zero(6,chain.getNrOfIndJoints())),
++        tmp_jac_weight1(MatrixXd::Zero(6,chain.getNrOfIndJoints())),
++        tmp_jac_weight2(MatrixXd::Zero(6,chain.getNrOfIndJoints())),
+         tmp_ts(MatrixXd::Zero(6,6)),
+-        tmp_js(MatrixXd::Zero(chain.getNrOfJoints(),chain.getNrOfJoints())),
++        tmp_js(MatrixXd::Zero(chain.getNrOfIndJoints(),chain.getNrOfIndJoints())),
+         weight_ts(MatrixXd::Identity(6,6)),
+-        weight_js(MatrixXd::Identity(chain.getNrOfJoints(),chain.getNrOfJoints())),
++        weight_js(MatrixXd::Identity(chain.getNrOfIndJoints(),chain.getNrOfIndJoints())),
+         lambda(0.0)
+     {
+     }
+@@ -65,8 +66,11 @@ namespace KDL
+     
+     int ChainIkSolverVel_wdls::CartToJnt(const JntArray& q_in, const Twist& v_in, JntArray& qdot_out)
+     {
+-        jnt2jac.JntToJac(q_in,jac);
++        jnt2jac.JntToJac(q_in,jac,true);
+         
++	//std::cout<<"Num Ind joints:"<<chain.getNrOfIndJoints()<<std::endl;
++	//std::cout<<"Coupling matrix:"<<chain.cm<<std::endl;
++
+         double sum;
+         unsigned int i,j;
+         
+@@ -89,9 +93,9 @@ namespace KDL
+         tmp_js = weight_js.lazyProduct(V);
+         
+         // tmp = (Si*U'*Ly*y), 
+-        for (i=0;i<jac.columns();i++) {
++        for (i=0;i<tmp_jac_coupling.cols();i++) {
+             sum = 0.0;
+-            for (j=0;j<jac.rows();j++) {
++            for (j=0;j<tmp_jac_coupling.rows();j++) {
+                 if(i<6)
+                     sum+= tmp_ts(j,i)*v_in(j);
+                 else
+@@ -102,6 +106,7 @@ namespace KDL
+             else
+                 tmp(i) = sum/S(i);
+         }
++
+         /*
+         // x = Lx^-1*V*tmp + x
+         for (i=0;i<jac.columns();i++) {
+@@ -112,7 +117,15 @@ namespace KDL
+             qdot_out(i)=sum;
+         }
+         */
+-        qdot_out.data=tmp_js.lazyProduct(tmp);
++	//std::cout<<"tmp_js"<<tmp_js<<std::endl;
++	//std::cout<<"tmp"<<tmp_js<<std::endl;
++	//std::cout<<"qdot_out_data"<<qdot_out.data<<std::endl;
++	//std::cout<<"multi"<<(tmp_js*tmp).lazy()<<std::endl;
++
++	//returns qdot for all Unlocked joints.
++	qdot_out.data=(chain.cm*(tmp_js*tmp).lazy()).lazy();
++	//std::cout<<"qdot_out: "<<qdot_out.data<<std::endl;
++	//std::cout<<"test"<<std::endl;
+         return ret;
+     }
+     
+diff --git a/orocos_kdl/src/chainiksolvervel_wdls.hpp b/orocos_kdl/src/chainiksolvervel_wdls.hpp
+index 176e811..9e5e730 100644
+--- a/orocos_kdl/src/chainiksolvervel_wdls.hpp
++++ b/orocos_kdl/src/chainiksolvervel_wdls.hpp
+@@ -148,6 +148,7 @@ namespace KDL
+         int maxiter;
+         Eigen::VectorXd tmp;
+         Eigen::MatrixXd tmp_jac;
++        Eigen::MatrixXd tmp_jac_coupling;
+         Eigen::MatrixXd tmp_jac_weight1;
+         Eigen::MatrixXd tmp_jac_weight2;
+         Eigen::MatrixXd tmp_ts;
+diff --git a/orocos_kdl/src/chainjnttojacsolver.cpp b/orocos_kdl/src/chainjnttojacsolver.cpp
+index 2a15db1..49ce6bb 100644
+--- a/orocos_kdl/src/chainjnttojacsolver.cpp
++++ b/orocos_kdl/src/chainjnttojacsolver.cpp
+@@ -23,9 +23,9 @@
+ 
+ namespace KDL
+ {
+-    ChainJntToJacSolver::ChainJntToJacSolver(const Chain& _chain):
+-        chain(_chain),locked_joints_(chain.getNrOfJoints(),false),
+-        nr_of_unlocked_joints_(chain.getNrOfJoints())
++  ChainJntToJacSolver::ChainJntToJacSolver(const Chain& _chain):
++    chain(_chain),locked_joints_(chain.getLockedJoints()),
++    nr_of_unlocked_joints_(chain.getNrOfUnlockedJoints()),jac_tmp(chain.getNrOfUnlockedJoints())
+     {
+     }
+ 
+@@ -43,12 +43,26 @@ namespace KDL
+             if(!locked_joints_[i])
+                 nr_of_unlocked_joints_++;
+         }
++	jac_tmp.resize(nr_of_unlocked_joints_);
++	return(0);
+     }
+ 
+-    int ChainJntToJacSolver::JntToJac(const JntArray& q_in,Jacobian& jac)
++    std::vector<bool> ChainJntToJacSolver::getLockedJoints()
+     {
+-        if(q_in.rows()!=chain.getNrOfJoints()||nr_of_unlocked_joints_!=jac.columns())
++      return(locked_joints_);
++    }
++
++    int ChainJntToJacSolver::JntToJac(const JntArray& q_in,Jacobian& jac,bool coupled)
++    {
++        int jac_columns;
++        if(coupled)
++	    jac_columns=chain.getNrOfIndJoints();
++	else
++	  jac_columns=nr_of_unlocked_joints_;
++        if(q_in.rows()!=chain.getNrOfJoints()||jac_columns!=jac.columns()) {
++	  //std::cout<<"incorrect jacobian size or qin size"<<std::endl;
+             return -1;
++	}
+         T_tmp = Frame::Identity();
+         SetToZero(t_tmp);
+         int j=0;
+@@ -65,22 +79,25 @@ namespace KDL
+                     t_tmp = T_tmp.M*chain.getSegment(i).twist(q_in(j),1.0);
+             }else{
+                 total = T_tmp*chain.getSegment(i).pose(0.0);
+-
+             }
+ 
+             //Changing Refpoint of all columns to new ee
+-            changeRefPoint(jac,total.p-T_tmp.p,jac);
++            changeRefPoint(jac_tmp,total.p-T_tmp.p,jac_tmp);
+ 
+             //Only increase jointnr if the segment has a joint
+             if(chain.getSegment(i).getJoint().getType()!=Joint::None){
+                 //Only put the twist inside if it is not locked
+                 if(!locked_joints_[j])
+-                    jac.setColumn(k++,t_tmp);
++		    jac_tmp.setColumn(k++,t_tmp);
+                 j++;
+             }
+ 
+             T_tmp = total;
+         }
++	if (coupled)
++	  jac.data=(jac_tmp.data*chain.cm).lazy();
++	else
++	  jac.data=jac_tmp.data;
+         return 0;
+     }
+ }
+diff --git a/orocos_kdl/src/chainjnttojacsolver.hpp b/orocos_kdl/src/chainjnttojacsolver.hpp
+index 18e2ca5..f4d8be8 100644
+--- a/orocos_kdl/src/chainjnttojacsolver.hpp
++++ b/orocos_kdl/src/chainjnttojacsolver.hpp
+@@ -53,15 +53,19 @@ namespace KDL
+          *
+          * @return always returns 0
+          */
+-        int JntToJac(const JntArray& q_in,Jacobian& jac);
++      int JntToJac(const JntArray& q_in,Jacobian& jac, bool coupled=false);
+         
+         int setLockedJoints(const std::vector<bool> locked_joints);
++
++        std::vector<bool> getLockedJoints();
++
+     private:
+         const Chain chain;
+         Twist t_tmp;
+         Frame T_tmp;
+         std::vector<bool> locked_joints_;
+         int nr_of_unlocked_joints_;
++        Jacobian jac_tmp;
+     };
+ }
+ #endif
+diff --git a/orocos_kdl/src/joint.hpp b/orocos_kdl/src/joint.hpp
+index 4c677ec..a460470 100644
+--- a/orocos_kdl/src/joint.hpp
++++ b/orocos_kdl/src/joint.hpp
+@@ -161,6 +161,16 @@ namespace KDL {
+             return type;
+         };
+       
++          /**
++         * Request the scaling of the joint angle.
++         *
++         * @return const reference to the scale
++         */
++        const double& getScale() const
++        {
++            return scale;
++        };
++
+         /** 
+          * Request the stringified type of the joint.
+          *
+diff --git a/python_orocos_kdl/PyKDL/kinfam.sip b/python_orocos_kdl/PyKDL/kinfam.sip
+index 6bc9586..214a8cf 100644
+--- a/python_orocos_kdl/PyKDL/kinfam.sip
++++ b/python_orocos_kdl/PyKDL/kinfam.sip
+@@ -47,6 +47,10 @@ public:
+     std::string getName()const;
+ 
+     JointType getType() const;
++    const double getScale() const;
++%MethodCode
++    sipRes=sipCpp->getScale();
++%End
+     std::string getTypeName() const;
+     const char* __repr__();
+ %MethodCode
+@@ -139,10 +143,53 @@ public:
+     
+     void addSegment(const Segment& segment);
+     void addChain(const Chain& chain);
++    int setCoupling(SIP_PYLIST,SIP_PYLIST);
++%MethodCode
++    //void setCoupling(const std::vector<bool> locked_joints,const Eigen::MatrixXd& cm);
++    //cm has to have exactly number of joints rows, and maximum number of joints colums 
++    //unsigned int nOfJoints=sipCpp->chain.getNrOfJoints(); //To check that we are receiving valid data dimensions. This doesn't work, chain is a private member. todo: How can we check for this? Maybe this check should be done when operating with the matrix, and not here? Maybe this check should be done inside the c++ code.
++    Py_ssize_t length;
++    PyObject *list=a0;
++    length=PyList_Size(list);
++    std::vector<bool> locked_joints(length,false);
++    for (Py_ssize_t r=0;r<length;r++) {
++        PyObject *item;
++        item=PyList_GetItem(list,r);
++	locked_joints[r]=PyFloat_AsDouble(item);
++    }
++
++    Py_ssize_t numRows,numCols;
++    double c_item;
++    PyObject *list2=a1;
++    numRows=PyList_Size(list2);
++    PyObject *temp1;
++    temp1=PyList_GetItem(list2,0);
++    numCols=PyList_Size(temp1);
++    Eigen::MatrixXd cm((int) numRows,(int) numCols);
++    for (Py_ssize_t r=0;r<numRows;r++) {
++        PyObject *row;
++        row=PyList_GetItem(list2,r);
++        if (numCols!=PyList_Size(row)) {
++           sipIsErr=1; //todo: raise exception
++	   	       //means that not all the rows are equally long
++        }
++        for (Py_ssize_t c=0;c<PyList_Size(row);c++) {
++            PyObject *item;
++            item=PyList_GetItem(row,c);
++            c_item=PyFloat_AsDouble(item);
++            cm(r,c)= c_item;
++        }
++    }
++    sipRes=sipCpp->setCoupling(locked_joints,cm);
++    
++%End
++
+         
+     unsigned int getNrOfJoints()const;
++    unsigned int getNrOfIndJoints()const;
+     unsigned int getNrOfSegments()const;
+-        
++    unsigned int getNrOfUnlockedJoints()const;
++
+     const Segment& getSegment(unsigned int nr)const /Factory/;
+ 
+ };
+@@ -439,7 +486,8 @@ public:
+         PyObject *row;
+         row=PyList_GetItem(list,r);
+         if (numCols!=PyList_Size(row)) {
+-           sipIsErr=1; //todo: raise exception
++           sipIsErr=1; //todo: raise exception. This means that the other rows don't
++	   	       // have the same size
+         }
+         for (Py_ssize_t c=0;c<numCols;c++) {
+             PyObject *item;
+@@ -463,23 +511,24 @@ public:
+     PyObject *temp1;
+     temp1=PyList_GetItem(list,0);
+     numCols=PyList_Size(temp1);
++    Eigen::MatrixXd Mq;
+     if (numRows!=numCols) {
+        sipIsErr=1; //todo: raise exception
+-    }
+-    Eigen::MatrixXd Mq;
+-    Mq=Eigen::MatrixXd::Identity(numRows,numCols);
+-    for (Py_ssize_t r=0;r<numRows;r++) {
+-        PyObject *row;
+-        row=PyList_GetItem(list,r);
+-        if (numCols!=PyList_Size(row)) {
+-           sipIsErr=1; //todo: raise exception
+-        }
+-        for (Py_ssize_t c=0;c<numCols;c++) {
+-            PyObject *item;
+-            item=PyList_GetItem(row,c);
+-            c_item=PyFloat_AsDouble(item);
+-            Mq(r,c)= c_item;
+-        }
++    } else {
++      Mq=Eigen::MatrixXd::Identity(numRows,numCols);
++      for (Py_ssize_t r=0;r<numRows;r++) {
++       	  PyObject *row;
++          row=PyList_GetItem(list,r);
++          if (numCols!=PyList_Size(row)) {
++             sipIsErr=1; //todo: raise exception
++          }
++          for (Py_ssize_t c=0;c<numCols;c++) {
++              PyObject *item;
++              item=PyList_GetItem(row,c);
++              c_item=PyFloat_AsDouble(item);
++              Mq(r,c)= c_item;
++          }
++      }
+     }
+     sipCpp->setWeightJS(Mq);
+ %End
+@@ -496,7 +545,23 @@ using namespace KDL;
+ %End
+ public:
+     ChainJntToJacSolver(const Chain& chain);
+-    int JntToJac(const JntArray& q_in,Jacobian& jac);
++    int JntToJac(const JntArray& q_in,Jacobian& jac, bool coupled=false);
++    int setLockedJoints(SIP_PYLIST);
++%MethodCode
++    Py_ssize_t py_size;
++    double c_item;
++    PyObject *list=a0;
++    py_size=PyList_Size(list);
++    std::vector<bool> locked_joints(py_size,false);
++    for (Py_ssize_t r=0;r<py_size;r++) {
++       	  PyObject *item;
++          item=PyList_GetItem(list,r);
++	  c_item=PyFloat_AsDouble(item);
++	  locked_joints[r]=c_item;
++    }
++    sipRes=sipCpp->setLockedJoints(locked_joints);
++    
++%End
+ };
+ 
+ 

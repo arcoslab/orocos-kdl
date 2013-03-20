@@ -1,0 +1,38 @@
+This directory contains an easy-to-use Makefile for compiling and installing KDL with our patches.
+
+Prerequisites
+=============
+
+You need the most recent version of SIP (packages sip4 python-sip4 python-sip4-dev).
+Install them with
+
+# sudo make sysdep
+
+Downloading, Patching and Compiling
+===================================
+
+Just type
+
+# make
+
+If you want a different installation destination, type:
+
+# PREFIX=/path/to/your/destination make
+
+Example for your local DIR directory:
+
+PREFIX=${HOME}/local/DIR/kdl make
+
+Installing
+==========
+
+For the kdl library:
+
+make install
+
+For the python bindings:
+
+make install-python
+
+(This will assume you are using xstow in the directory ${PREFIX}/../)
+
