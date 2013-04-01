@@ -1,0 +1,72 @@
+Index: orocos_kdl/src/chain.hpp
+===================================================================
+--- orocos_kdl/src/chain.hpp	(revision 34658)
++++ orocos_kdl/src/chain.hpp	(working copy)
+@@ -24,6 +24,7 @@
+ 
+ #include "segment.hpp"
+ #include <string>
++#include <Eigen/Core>
+ 
+ namespace KDL {
+     /**
+@@ -35,9 +36,14 @@
+     class Chain {
+     private:
+         int nrOfJoints;
++        int nrOfIndJoints;
+         int nrOfSegments;
++        int nrOfUnlockedJoints;
++        std::vector<bool> locked_joints;
+     public:
+         std::vector<Segment> segments;
++        Eigen::MatrixXd cm;
++        
+         /**
+          * The constructor of a chain, a new chain is always empty.
+          *
+@@ -61,6 +67,16 @@
+         void addChain(const Chain& chain);
+ 
+         /**
++	 * Sets the joints that are locked and the coupling matrix.
++	 * locked_joints is an std vector of bools that indicates which joints
++	 * are locked (true), and which ones are not locked (false).
++	 * cm matrix helps define a kinematic structure with coupled joints
++	 * @param cm The coupling matrix
++	 */
++
++        int setCoupling(const std::vector<bool> locked_joints,const Eigen::MatrixXd& cm);
++
++        /**
+          * Request the total number of joints in the chain.\n
+          * <strong> Important:</strong> It is not the
+          * same as the total number of segments since a segment does not
+@@ -69,7 +85,15 @@
+          * @return total nr of joints
+          */
+         unsigned int getNrOfJoints()const {return nrOfJoints;};
++      
+         /**
++	 * Request the total number of independent joints in the chain.
++	 * It's the Coupling matrix rank.
++	 * @return total nr of independ joints
++	 */
++        unsigned int getNrOfIndJoints()const {return nrOfIndJoints;};
++
++        /**
+          * Request the total number of segments in the chain.
+          * @return total number of segments
+          */
+@@ -85,6 +109,11 @@
+          */
+         const Segment& getSegment(unsigned int nr)const;
+ 
++        std::vector<bool> getLockedJoints() const;
++
++        unsigned int getNrOfUnlockedJoints()const {return nrOfUnlockedJoints;};
++
++
+         virtual ~Chain();
+     };
+ 

@@ -1,0 +1,12 @@
+Index: orocos_kdl/src/chainiksolvervel_wdls.hpp
+===================================================================
+--- orocos_kdl/src/chainiksolvervel_wdls.hpp	(revision 34658)
++++ orocos_kdl/src/chainiksolvervel_wdls.hpp	(working copy)
+@@ -148,6 +148,7 @@
+         int maxiter;
+         Eigen::VectorXd tmp;
+         Eigen::MatrixXd tmp_jac;
++        Eigen::MatrixXd tmp_jac_coupling;
+         Eigen::MatrixXd tmp_jac_weight1;
+         Eigen::MatrixXd tmp_jac_weight2;
+         Eigen::MatrixXd tmp_ts;

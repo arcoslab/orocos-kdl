@@ -1,0 +1,21 @@
+Index: orocos_kdl/src/joint.hpp
+===================================================================
+--- orocos_kdl/src/joint.hpp	(revision 34658)
++++ orocos_kdl/src/joint.hpp	(working copy)
+@@ -161,6 +161,16 @@
+             return type;
+         };
+       
++          /**
++         * Request the scaling of the joint angle.
++         *
++         * @return const reference to the scale
++         */
++        const double& getScale() const
++        {
++            return scale;
++        };
++
+         /** 
+          * Request the stringified type of the joint.
+          *

@@ -1,0 +1,22 @@
+Index: config/FindPythonLibrary.cmake
+===================================================================
+--- config/FindPythonLibrary.cmake	(revision 34658)
++++ config/FindPythonLibrary.cmake	(working copy)
+@@ -31,10 +31,15 @@
+   set(PYTHONLIBRARY_FOUND TRUE)
+ else(EXISTS PYTHON_LIBRARY)
+ 
+-  FIND_PACKAGE(PythonInterp)
++  EXECUTE_PROCESS(COMMAND which python OUTPUT_VARIABLE PYTHON_WHICH)
++  STRING(REGEX REPLACE "(.*)\n" "\\1" PYTHON_EXECUTABLE ${PYTHON_WHICH})
++  if(PYTHON_EXECUTABLE STREQUAL "")
++    FIND_PACKAGE(PythonInterp)
++  else(PYTHON_EXECUTABLE STREQUAL "")
++    set(PYTHONINTERP_FOUND TRUE)
++  endif(PYTHON_EXECUTABLE STREQUAL "")
+ 
+   if(PYTHONINTERP_FOUND)
+-
+     FIND_FILE(_find_lib_python_py FindLibPython.py PATHS ${CMAKE_MODULE_PATH})
+ 
+     EXECUTE_PROCESS(COMMAND ${PYTHON_EXECUTABLE}  ${_find_lib_python_py} OUTPUT_VARIABLE python_config)
