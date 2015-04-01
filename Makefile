@@ -7,7 +7,8 @@ built: patched
 	touch built
 
 patched:
-	git clone http://git.mech.kuleuven.be/robotics/orocos_kinematics_dynamics.git kdl
+	git clone https://github.com/orocos/orocos_kinematics_dynamics.git kdl
+	cd kdl; git checkout 8e45049;  cd ..;
 	cat *.patch | patch -d kdl -p1
 	cd ..
 	touch patched
